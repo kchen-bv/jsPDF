@@ -12,8 +12,8 @@
 
   /** @preserve
    * jsPDF - PDF Document creation from JavaScript
-   * Version 1.4.1 Built on 2018-06-06T07:49:28.721Z
-   *                           CommitID 3233f44044
+   * Version 1.4.1 Built on 2018-07-17T06:44:43.343Z
+   *                           CommitID 0237c01bc0
    *
    * Copyright (c) 2010-2016 James Hall <james@parall.ax>, https://github.com/MrRio/jsPDF
    *               2010 Aaron Spike, https://github.com/acspike
@@ -2174,8 +2174,7 @@
        * @name setFont
        */
       API.setFont = function (fontName, fontStyle) {
-        activeFontKey = _getFont(fontName, fontStyle);
-        // if font is not found, the above line blows up and we never go further
+        activeFontKey = _getFont(fontName, fontStyle, { disableWarning: false });
         return this;
       };
 
@@ -2874,78 +2873,80 @@
         var lastLine = "";
         var lineCount = 0;
         Line: for (var i in textSplit) {
-          lastLine += textSplit[i] + " ";
-          // Remove last blank
-          lastLine = lastLine.substr(lastLine.length - 1) == " " ? lastLine.substr(0, lastLine.length - 1) : lastLine;
-          var key = parseInt(i);
-          lastLength = calculateFontSpace(lastLine + " ", fontSize + "px", font).width;
-          var nextLineIsSmaller = isSmallerThanWidth(key, lastLine, fontSize);
-          var isLastWord = i >= textSplit.length - 1;
-          if (nextLineIsSmaller && !isLastWord) {
-            lastLine += " ";
-            continue; // Line
-          } else if (!nextLineIsSmaller && !isLastWord) {
-            if (!formObject.multiline) {
-              continue FontSize;
+          if (textSplit.hasOwnProperty(i)) {
+            lastLine += textSplit[i] + " ";
+            // Remove last blank
+            lastLine = lastLine.substr(lastLine.length - 1) == " " ? lastLine.substr(0, lastLine.length - 1) : lastLine;
+            var key = parseInt(i);
+            lastLength = calculateFontSpace(lastLine + " ", fontSize + "px", font).width;
+            var nextLineIsSmaller = isSmallerThanWidth(key, lastLine, fontSize);
+            var isLastWord = i >= textSplit.length - 1;
+            if (nextLineIsSmaller && !isLastWord) {
+              lastLine += " ";
+              continue; // Line
+            } else if (!nextLineIsSmaller && !isLastWord) {
+              if (!formObject.multiline) {
+                continue FontSize;
+              } else {
+                if ((textHeight + lineSpacing) * (lineCount + 2) + lineSpacing > height) {
+                  // If the Text is higher than the
+                  // FieldObject
+                  continue FontSize;
+                }
+                lastWordInLine = key;
+                // go on
+              }
+            } else if (isLastWord) {
+              lastWordInLine = key;
             } else {
-              if ((textHeight + lineSpacing) * (lineCount + 2) + lineSpacing > height) {
-                // If the Text is higher than the
-                // FieldObject
+              if (formObject.multiline && (textHeight + lineSpacing) * (lineCount + 2) + lineSpacing > height) {
+                // If the Text is higher than the FieldObject
                 continue FontSize;
               }
-              lastWordInLine = key;
-              // go on
             }
-          } else if (isLastWord) {
-            lastWordInLine = key;
-          } else {
-            if (formObject.multiline && (textHeight + lineSpacing) * (lineCount + 2) + lineSpacing > height) {
-              // If the Text is higher than the FieldObject
-              continue FontSize;
+
+            var line = '';
+
+            for (var x = firstWordInLine; x <= lastWordInLine; x++) {
+              line += textSplit[x] + ' ';
             }
+
+            // Remove last blank
+            line = line.substr(line.length - 1) == " " ? line.substr(0, line.length - 1) : line;
+            // lastLength -= blankSpace.width;
+            lastLength = calculateFontSpace(line, fontSize + "px", font).width;
+
+            // Calculate startX
+            switch (formObject.Q) {
+              case 2:
+                // Right justified
+                startX = width - lastLength - borderPadding;
+                break;
+              case 1:
+                // Q = 1 := Text-Alignment: Center
+                startX = (width - lastLength) / 2;
+                break;
+              case 0:
+              default:
+                startX = borderPadding;
+                break;
+            }
+            text += startX.toFixed(2) + ' ' + lastY.toFixed(2) + ' Td\n';
+            text += '(' + line + ') Tj\n';
+            // reset X in PDF
+            text += -startX.toFixed(2) + ' 0 Td\n';
+
+            // After a Line, adjust y position
+            lastY = -(fontSize + lineSpacing);
+
+            // Reset for next iteration step
+            lastLength = 0;
+            firstWordInLine = lastWordInLine + 1;
+            lineCount++;
+
+            lastLine = "";
+            continue Line;
           }
-
-          var line = '';
-
-          for (var x = firstWordInLine; x <= lastWordInLine; x++) {
-            line += textSplit[x] + ' ';
-          }
-
-          // Remove last blank
-          line = line.substr(line.length - 1) == " " ? line.substr(0, line.length - 1) : line;
-          // lastLength -= blankSpace.width;
-          lastLength = calculateFontSpace(line, fontSize + "px", font).width;
-
-          // Calculate startX
-          switch (formObject.Q) {
-            case 2:
-              // Right justified
-              startX = width - lastLength - borderPadding;
-              break;
-            case 1:
-              // Q = 1 := Text-Alignment: Center
-              startX = (width - lastLength) / 2;
-              break;
-            case 0:
-            default:
-              startX = borderPadding;
-              break;
-          }
-          text += startX.toFixed(2) + ' ' + lastY.toFixed(2) + ' Td\n';
-          text += '(' + line + ') Tj\n';
-          // reset X in PDF
-          text += -startX.toFixed(2) + ' 0 Td\n';
-
-          // After a Line, adjust y position
-          lastY = -(fontSize + lineSpacing);
-
-          // Reset for next iteration step
-          lastLength = 0;
-          firstWordInLine = lastWordInLine + 1;
-          lineCount++;
-
-          lastLine = "";
-          continue Line;
         }
         break;
       }
@@ -2992,13 +2993,16 @@
     };
 
     var annotReferenceCallback = function annotReferenceCallback() {
-      for (var i in scope.internal.acroformPlugin.acroFormDictionaryRoot.Fields) {
-        var formObject = scope.internal.acroformPlugin.acroFormDictionaryRoot.Fields[i];
-        // add Annot Reference!
-        if (formObject.hasAnnotation) {
-          // If theres an Annotation Widget in the Form Object, put the
-          // Reference in the /Annot array
-          createAnnotationReference.call(scope, formObject);
+      var fields = scope.internal.acroformPlugin.acroFormDictionaryRoot.Fields;
+      for (var i in fields) {
+        if (fields.hasOwnProperty(i)) {
+          var formObject = fields[i];
+          // add Annot Reference!
+          if (formObject.hasAnnotation) {
+            // If theres an Annotation Widget in the Form Object, put the
+            // Reference in the /Annot array
+            createAnnotationReference.call(scope, formObject);
+          }
         }
       }
     };
@@ -3068,77 +3072,84 @@
       var fieldArray = fieldArray || scope.internal.acroformPlugin.acroFormDictionaryRoot.Kids;
 
       for (var i in fieldArray) {
-        var form = fieldArray[i];
 
-        var oldRect = form.Rect;
+        if (fieldArray.hasOwnProperty(i)) {
+          var form = fieldArray[i];
 
-        if (form.Rect) {
-          form.Rect = calculateCoordinates.call(this, form.Rect);
-        }
+          var oldRect = form.Rect;
 
-        // Start Writing the Object
-        scope.internal.newObjectDeferredBegin(form.objId);
-
-        var content = form.objId + " 0 obj\n<<\n";
-
-        if ((typeof form === 'undefined' ? 'undefined' : _typeof(form)) === "object" && typeof form.getContent === "function") {
-          content += form.getContent();
-        }
-
-        form.Rect = oldRect;
-
-        if (form.hasAppearanceStream && !form.appearanceStreamContent) {
-          // Calculate Appearance
-          var appearance = calculateAppearanceStream.call(this, form);
-          content += "/AP << /N " + appearance + " >>\n";
-
-          scope.internal.acroformPlugin.xForms.push(appearance);
-        }
-
-        // Assume AppearanceStreamContent is a Array with N,R,D (at least
-        // one of them!)
-        if (form.appearanceStreamContent) {
-          content += "/AP << ";
-          // Iterate over N,R and D
-          for (var k in form.appearanceStreamContent) {
-            var value = form.appearanceStreamContent[k];
-            content += "/" + k + " ";
-            content += "<< ";
-            if (Object.keys(value).length >= 1 || Array.isArray(value)) {
-              // appearanceStream is an Array or Object!
-              for (var i in value) {
-                var obj = value[i];
-                if (typeof obj === 'function') {
-                  // if Function is referenced, call it in order
-                  // to get the FormXObject
-                  obj = obj.call(this, form);
-                }
-                content += "/" + i + " " + obj + " ";
-
-                // In case the XForm is already used, e.g. OffState
-                // of CheckBoxes, don't add it
-                if (!(scope.internal.acroformPlugin.xForms.indexOf(obj) >= 0)) scope.internal.acroformPlugin.xForms.push(obj);
-              }
-            } else {
-              var obj = value;
-              if (typeof obj === 'function') {
-                // if Function is referenced, call it in order to
-                // get the FormXObject
-                obj = obj.call(this, form);
-              }
-              content += "/" + i + " " + obj + " \n";
-              if (!(scope.internal.acroformPlugin.xForms.indexOf(obj) >= 0)) scope.internal.acroformPlugin.xForms.push(obj);
-            }
-            content += " >>\n";
+          if (form.Rect) {
+            form.Rect = calculateCoordinates.call(this, form.Rect);
           }
 
-          // appearance stream is a normal Object..
-          content += ">>\n";
+          // Start Writing the Object
+          scope.internal.newObjectDeferredBegin(form.objId);
+
+          var content = form.objId + " 0 obj\n<<\n";
+
+          if ((typeof form === 'undefined' ? 'undefined' : _typeof(form)) === "object" && typeof form.getContent === "function") {
+            content += form.getContent();
+          }
+
+          form.Rect = oldRect;
+
+          if (form.hasAppearanceStream && !form.appearanceStreamContent) {
+            // Calculate Appearance
+            var appearance = calculateAppearanceStream.call(this, form);
+            content += "/AP << /N " + appearance + " >>\n";
+
+            scope.internal.acroformPlugin.xForms.push(appearance);
+          }
+
+          // Assume AppearanceStreamContent is a Array with N,R,D (at least
+          // one of them!)
+          if (form.appearanceStreamContent) {
+            content += "/AP << ";
+            // Iterate over N,R and D
+            for (var k in form.appearanceStreamContent) {
+              if (form.appearanceStreamContent.hasOwnProperty(k)) {
+                var value = form.appearanceStreamContent[k];
+                content += "/" + k + " ";
+                content += "<< ";
+                if (Object.keys(value).length >= 1 || Array.isArray(value)) {
+                  // appearanceStream is an Array or Object!
+                  for (var i in value) {
+                    if (value.hasOwnProperty(i)) {
+                      var obj = value[i];
+                      if (typeof obj === 'function') {
+                        // if Function is referenced, call it in order
+                        // to get the FormXObject
+                        obj = obj.call(this, form);
+                      }
+                      content += "/" + i + " " + obj + " ";
+
+                      // In case the XForm is already used, e.g. OffState
+                      // of CheckBoxes, don't add it
+                      if (!(scope.internal.acroformPlugin.xForms.indexOf(obj) >= 0)) scope.internal.acroformPlugin.xForms.push(obj);
+                    }
+                  }
+                } else {
+                  var obj = value;
+                  if (typeof obj === 'function') {
+                    // if Function is referenced, call it in order to
+                    // get the FormXObject
+                    obj = obj.call(this, form);
+                  }
+                  content += "/" + i + " " + obj + " \n";
+                  if (!(scope.internal.acroformPlugin.xForms.indexOf(obj) >= 0)) scope.internal.acroformPlugin.xForms.push(obj);
+                }
+                content += " >>\n";
+              }
+            }
+
+            // appearance stream is a normal Object..
+            content += ">>\n";
+          }
+
+          content += ">>\nendobj\n";
+
+          scope.internal.out(content);
         }
-
-        content += ">>\nendobj\n";
-
-        scope.internal.out(content);
       }
       if (standardFields) {
         createXFormObjectCallback.call(this, scope.internal.acroformPlugin.xForms);
@@ -3147,18 +3158,20 @@
 
     var createXFormObjectCallback = function createXFormObjectCallback(fieldArray) {
       for (var i in fieldArray) {
-        var key = i;
-        var form = fieldArray[i];
-        // Start Writing the Object
-        scope.internal.newObjectDeferredBegin(form && form.objId);
+        if (fieldArray.hasOwnProperty(i)) {
+          var key = i;
+          var form = fieldArray[i];
+          // Start Writing the Object
+          scope.internal.newObjectDeferredBegin(form && form.objId);
 
-        var content = "";
-        if ((typeof form === 'undefined' ? 'undefined' : _typeof(form)) === "object" && typeof form.getString === "function") {
-          content = form.getString();
+          var content = "";
+          if ((typeof form === 'undefined' ? 'undefined' : _typeof(form)) === "object" && typeof form.getString === "function") {
+            content = form.getString();
+          }
+          scope.internal.out(content);
+
+          delete fieldArray[key];
         }
-        scope.internal.out(content);
-
-        delete fieldArray[key];
       }
     };
 
@@ -3199,9 +3212,12 @@
       if (Array.isArray(array)) {
         var content = ' [';
         for (var i in array) {
-          var element = array[i].toString();
-          content += element;
-          content += i < array.length - 1 ? ' ' : '';
+
+          if (array.hasOwnProperty(i)) {
+            var element = array[i].toString();
+            content += element;
+            content += i < array.length - 1 ? ' ' : '';
+          }
         }
         content += ']';
 
@@ -3278,24 +3294,26 @@
         });
 
         for (var i in keys) {
-          var key = keys[i];
-          var value = fieldObject[key];
+          if (keys.hasOwnProperty(i)) {
+            var key = keys[i];
+            var value = fieldObject[key];
 
-          /*
-          * if (key == 'Rect' && value) { value =
-          * AcroForm.internal.calculateCoordinates.call(jsPDF.API.acroformPlugin.internal,
-          * value); }
-          */
+            /*
+            * if (key == 'Rect' && value) { value =
+            * AcroForm.internal.calculateCoordinates.call(jsPDF.API.acroformPlugin.internal,
+            * value); }
+            */
 
-          if (value) {
-            if (Array.isArray(value)) {
-              content += '/' + key + ' ' + arrayToPdfArray(value) + "\n";
-            } else if (value instanceof AcroFormPDFObject) {
-              // In case it is a reference to another PDFObject,
-              // take the referennce number
-              content += '/' + key + ' ' + value.objId + " 0 R" + "\n";
-            } else {
-              content += '/' + key + ' ' + value + '\n';
+            if (value) {
+              if (Array.isArray(value)) {
+                content += '/' + key + ' ' + arrayToPdfArray(value) + "\n";
+              } else if (value instanceof AcroFormPDFObject) {
+                // In case it is a reference to another PDFObject,
+                // take the referennce number
+                content += '/' + key + ' ' + value.objId + " 0 R" + "\n";
+              } else {
+                content += '/' + key + ' ' + value + '\n';
+              }
             }
           }
         }
@@ -3404,6 +3422,18 @@
           return _FT;
         }
       });
+
+      var _F = 4;
+      Object.defineProperty(this, 'F', {
+        enumerable: true,
+        set: function set$$1(val) {
+          _F = val;
+        },
+        get: function get$$1() {
+          return _F;
+        }
+      });
+
       /**
       * The Partial name of the Field Object. It has to be unique.
       */
@@ -3700,10 +3730,12 @@
         return;
       }
       for (var i in this.__Kids) {
-        var child = this.__Kids[i];
+        if (this.__Kids.hasOwnProperty(i)) {
+          var child = this.__Kids[i];
 
-        child.appearanceStreamContent = appearance.createAppearanceStream(child._Name);
-        child.MK = appearance.createMK();
+          child.appearanceStreamContent = appearance.createAppearanceStream(child._Name);
+          child.MK = appearance.createMK();
+        }
       }
     };
 
@@ -4504,7 +4536,7 @@
   		]
   		/**
     * Recognize filetype of Image by magic-bytes
-    * 
+    *
     * https://en.wikipedia.org/wiki/List_of_file_signatures
     *
     * @name getImageFileTypeByImageData
@@ -4512,7 +4544,7 @@
     * @function
     * @param {String} imageData as base64 encoded DataUrl
     * @param {String} format of file if filetype-recognition fails, e.g. 'JPEG'
-    * 
+    *
     * @returns {String} filetype of Image
     * @methodOf jsPDF#
     */
@@ -4826,7 +4858,7 @@
    * @public
    * @function
    * @param {String} possible Base64-String
-   * 
+   *
    * @returns {boolean}
    * @methodOf jsPDF#
    */
@@ -4835,17 +4867,19 @@
 
   		var result = true;
 
-  		if (possibleBase64String.length % 4 !== 0) {
-  			result = false;
-  		}
-
-  		if (/[A-Za-z0-9\/]+/.test(possibleBase64String.substr(0, possibleBase64String.length - 2)) === false) {
-  			result = false;
-  		}
-
-  		if (/[A-Za-z0-9\/][A-Za-z0-9+\/]|[A-Za-z0-9+\/]=|==/.test(possibleBase64String.substr(-2)) === false) {
-  			result = false;
-  		}
+  		// if (possibleBase64String.length % 4 !== 0) {
+  		// 	result = false;
+  		// }
+  		//
+  		//
+  		// // if (/[A-Za-z0-9\/]+/.test(possibleBase64String.substr(0, possibleBase64String.length - 2)) === false) {
+  		// // 	result = false;
+  		// // }
+  		//
+  		//
+  		// if (/[A-Za-z0-9\/][A-Za-z0-9+\/]|[A-Za-z0-9+\/]=|==/.test(possibleBase64String.substr(-2)) === false) {
+  		// 	result = false;
+  		// }
   		return result;
   	};
 
@@ -4865,7 +4899,7 @@
 
   	/**
     * Check to see if ArrayBuffer is supported
-    * 
+    *
     * @returns {boolean}
       * @methodOf jsPDF#
     */
@@ -4876,7 +4910,7 @@
   	/**
     * Tests supplied object to determine if ArrayBuffer
     * @param {Object[object]}
-    * 
+    *
     * @returns {boolean}
     * @methodOf jsPDF#
     */
@@ -4902,7 +4936,7 @@
    * @public
    * @function
    * @param {ArrayBuffer} BinaryString with ImageData
-   * 
+   *
    * @returns {Uint8Array}
    */
   	jsPDFAPI.binaryStringToUint8Array = function (binary_string) {
@@ -4924,7 +4958,7 @@
    * @public
    * @function
    * @param {ArrayBuffer} ArrayBuffer with ImageData
-   * 
+   *
    * @returns {String}
    */
   	jsPDFAPI.arrayBufferToBinaryString = function (buffer) {
@@ -4962,7 +4996,7 @@
       * @name arrayBufferToBase64
       * @public
       * @function
-      * 
+      *
       * @returns {String}
       */
   	jsPDFAPI.arrayBufferToBase64 = function (arrayBuffer) {
@@ -5026,7 +5060,7 @@
       *
       * @public
       * @function
-      * 
+      *
       * @returns {String}
       */
   	jsPDFAPI.createImageInfo = function (data, wd, ht, cs, bpc, f, imageIndex, alias, dp, trns, pal, smask, p) {
@@ -5065,7 +5099,7 @@
    * @param {String} alias of the image (if used multiple times)
    * @param {String} compression of the generated JPEG, can have the values 'NONE', 'FAST', 'MEDIUM' and 'SLOW'
    * @param {Number} rotation of the image in degrees (0-359)
-   * 
+   *
    * @returns jsPDF
    * @methodOf jsPDF#
    */
@@ -11411,7 +11445,6 @@
               s = 0,
               cmapConfirm;
           var strText = '';
-          var attr;
           var key = activeFontKey;
           var encoding = fonts[key].encoding;
 
@@ -11426,7 +11459,7 @@
           }
           strText = text;
 
-          key = attr ? getFont(attr.font, attr.fontStyle) : activeFontKey;
+          key = activeFontKey;
           if (Object.prototype.toString.call(text) === '[object Array]') {
               strText = text[0];
           }
@@ -11979,12 +12012,6 @@
     var _Buffer = null, _isBuffer = (function() {
       if (!_hasArrayBuffer)
         return function _isBuffer() { return false };
-
-      try {
-        var buffer = {};
-        if (typeof buffer.Buffer === 'function')
-          _Buffer = buffer.Buffer;
-      } catch (error) {}
 
       return function _isBuffer(value) {
         return value instanceof ArrayBuffer ||
@@ -16299,7 +16326,7 @@
     Released under  License
   */
 
-  !function(e){if("object"==typeof exports&&"undefined"!=typeof module)module.exports=e();else if("function"==typeof define&&define.amd)define([],e);else{var f;"undefined"!=typeof window?f=window:"undefined"!=typeof global?f=global:"undefined"!=typeof self&&(f=self),f.html2canvas=e();}}(function(){var define;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r);}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(_dereq_,module,exports){
+  !function(e){if("object"==typeof exports&&"undefined"!=typeof module)module.exports=e();else if("function"==typeof define&&define.amd)define([],e);else{var f;"undefined"!=typeof window?f=window:"undefined"!=typeof global?f=global:"undefined"!=typeof self&&(f=self),f.html2canvas=e();}}(function(){return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r);}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(_dereq_,module,exports){
   (function (global){
   (function(root) {
 
@@ -16786,14 +16813,7 @@
   	/** Expose `punycode` */
   	// Some AMD build optimizers, like r.js, check for specific condition patterns
   	// like the following:
-  	if (
-  		typeof define == 'function' &&
-  		typeof define.amd == 'object' && define.amd && false
-  	) {
-  		define('punycode', function() {
-  			return punycode;
-  		});
-  	} else if (freeExports && !freeExports.nodeType) {
+  	if (freeExports && !freeExports.nodeType) {
   		if (freeModule) { // in Node.js or RingoJS v0.8.0+
   			freeModule.exports = punycode;
   		} else { // in Narwhal or RingoJS v0.7.0-
@@ -17251,12 +17271,6 @@
   } : html2canvas;
 
   module.exports = html2canvasExport;
-
-  if (typeof(define) === 'function' && define.amd && false) {
-      define('html2canvas', [], function() {
-          return html2canvasExport;
-      });
-  }
 
   function renderDocument(document, options, windowWidth, windowHeight, html2canvasIndex) {
       return createWindowClone(document, document, windowWidth, windowHeight, options, document.defaultView.pageXOffset, document.defaultView.pageYOffset).then(function(container) {
